@@ -1,0 +1,24 @@
+# node
+node_modules
+
+# vscode
+.vscode
+
+*.pac
+*.pyc
+tmp/
+
+*.egg-info
+build/
+dist/
+
+# Windows
+[Dd]esktop.ini
+[Tt]humbs.db
+$RECYCLE.BIN/
+
+# MacOSX
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes

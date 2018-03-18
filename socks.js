@@ -1,0 +1,9 @@
+const PROXY_TYPE_SOCKS4 = 1;
+const PROXY_TYPE_SOCKS5 = 2;
+const PROXY_TYPE_HTTP = 3;
+
+module.exports = {
+  PROXY_TYPE_SOCKS4,
+  PROXY_TYPE_SOCKS5,
+  PROXY_TYPE_HTTP,
+}
