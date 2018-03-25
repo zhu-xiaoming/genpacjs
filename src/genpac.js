@@ -5,17 +5,21 @@ const _ = require('lodash');
 const ConfigParser = require('configparser');
 const request = require('request-promise');
 
+const package = require('../package.json');
 const utils = require('./utils');
 
-const VERSION = '1.0.0';
+const VERSION = package.version;
 const DEFAULT_GFWLIST_URL = 'http://autoproxy-gfwlist.googlecode.com/svn/trunk/gfwlist.txt';
 
-const pacComment = (version, generatedTime, lastModified) => `/**
- * genpac ${version}
+const pacComment = (lastModified) => {
+    const generatedTime = new Date();
+    return `/**
+ * genpac ${VERSION}
  * Generated: ${generatedTime}
  * GFWList Last-Modified: ${lastModified}
  */
 `;
+}
 
 const PAC_FUNCS = `
 var regExpMatch = function(url, pattern) {
@@ -317,7 +321,7 @@ class GenPAC {
             GenPAC.parseRules(this.gfwlistContent),
         ];
         config = `var config = ${JSON.stringify(config, null, 4)};`;
-        const comment = pacComment(VERSION, new Date(), this.gfwlistModified);
+        const comment = pacComment(this.gfwlistModified);
         this.pacContent = `${comment}\n${config}\n${PAC_FUNCS}`;
     }
 
