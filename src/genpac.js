@@ -5,11 +5,11 @@ const _ = require('lodash');
 const ConfigParser = require('configparser');
 const request = require('request-promise');
 
-const package = require('../package.json');
+const packageInfo = require('../package.json');
 const utils = require('./utils');
 
-const VERSION = package.version;
-const DEFAULT_GFWLIST_URL = 'http://autoproxy-gfwlist.googlecode.com/svn/trunk/gfwlist.txt';
+const VERSION = packageInfo.version;
+const DEFAULT_GFWLIST_URL = 'https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt';
 
 const pacComment = (lastModified) => {
     const generatedTime = new Date();
@@ -19,7 +19,7 @@ const pacComment = (lastModified) => {
  * GFWList Last-Modified: ${lastModified}
  */
 `;
-}
+};
 
 const PAC_FUNCS = `
 var regExpMatch = function(url, pattern) {

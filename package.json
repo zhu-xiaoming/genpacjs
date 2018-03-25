@@ -1,19 +1,35 @@
 {
   "name": "genpacjs",
-  "version": "1.0.0",
-  "description": "",
-  "main": "genpac.js",
+  "version": "1.0.3",
+  "description": "基于 gfwlist 的代理自动配置(Proxy Auto-config)文件生成工具",
+  "main": "./src/genpac.js",
+  "bin": {
+    "genpac": "./bin/genpac"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "homepage": "https://github.com/little-tomorrow/genpacjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/little-tomorrow/genpacjs"
+  },
+  "bugs": {
+    "url": "https://github.com/little-tomorrow/genpacjs/issues"
+  },
+  "keywords": [
+    "pac",
+    "genpac",
+    "gfwlist"
+  ],
+  "author": "little-tomorrow",
+  "license": "MIT",
   "dependencies": {
     "configparser": "^0.1.5",
     "lodash": "^4.17.5",
     "request": "^2.85.0",
-    "request-promise": "^4.2.2"
+    "request-promise": "^4.2.2",
+    "yargs": "^11.0.0"
   },
   "devDependencies": {
     "eslint": "^4.19.0",
