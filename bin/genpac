@@ -26,6 +26,15 @@ const { argv } = yargs
         type: 'string',
         description: '获取 gfwlist 时的代理设置，如果你可以正常访问 gfwlist，则无必要使用该选项',
     })
+    .option('gfwlist-local', {
+        type: 'string',
+        description: '本地 gfwlist 文件地址，当在线地址获取失败时使用',
+    })
+    .option('gfwlist-local-ignore-overwrite', {
+        type: 'boolean',
+        default: false,
+        description: '当在线 gfwlist 成功获取且 --gfwlist-local 存在时，默认会将在线内容覆盖到本地，此项设置后则不覆盖',
+    })
     .option('user-rule', {
         type: 'array',
         description: '自定义规则，该选项允许重复使用',
@@ -52,6 +61,8 @@ const {
     proxy,
     'gfwlist-url': gfwlistURL,
     'gfwlist-proxy': gfwlistProxy,
+    'gfwlist-local': gfwlistLocal,
+    'gfwlist-local-ignore-overwrite': gfwlistLocalIgnoreOverwrite,
     'user-rule': userRule,
     'user-rule-from': userRuleFrom,
     'config-from': configFrom,
@@ -59,15 +70,17 @@ const {
     verbose,
 } = argv;
 
-const genpac = new GenPAC(
-    proxy,
-    output,
+const genpac = new GenPAC({
+    pacProxy: proxy,
+    outputFile: output,
     gfwlistURL,
     gfwlistProxy,
-    userRule,
-    userRuleFrom,
-    configFrom,
+    gfwlistLocal,
+    gfwlistLocalIgnoreOverwrite,
+    userRules: userRule,
+    userRuleFiles: userRuleFrom,
+    configFile: configFrom,
     verbose,
-);
+});
 
 genpac.generate();

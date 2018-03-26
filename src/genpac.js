@@ -11,12 +11,13 @@ const utils = require('./utils');
 const VERSION = packageInfo.version;
 const DEFAULT_GFWLIST_URL = 'https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt';
 
-const pacComment = (lastModified) => {
+const pacComment = (lastModified, gfwlistFrom) => {
     const generatedTime = new Date();
     return `/**
  * genpac ${VERSION}
  * Generated: ${generatedTime}
  * GFWList Last-Modified: ${lastModified}
+ * GFWList From: ${gfwlistFrom}
  */
 `;
 };
@@ -74,16 +75,18 @@ const PROXY_TYPE_MAP = {
 };
 
 class GenPAC {
-    constructor(
+    constructor({
         pacProxy = null,
         outputFile = null,
         gfwlistURL = DEFAULT_GFWLIST_URL,
         gfwlistProxy = null,
+        gfwlistLocal = null,
+        gfwlistLocalIgnoreOverwrite = false,
         userRules = [],
         userRuleFiles = [],
         configFile = null,
         verbose = false,
-    ) {
+    }) {
         this.verbose = verbose;
 
         this.logger = console;
@@ -96,6 +99,8 @@ class GenPAC {
         this.pacProxy = pacProxy || getCfg('pacProxy')(null);
         this.gfwlistURL = gfwlistURL || getCfg('gfwlistURL')(DEFAULT_GFWLIST_URL);
         this.gfwlistProxy = gfwlistProxy || getCfg('gfwlistProxy')(null);
+        this.gfwlistLocal = gfwlistLocal || getCfg('gfwlistLocal')(null);
+        this.gfwlistLocalIgnoreOverwrite = gfwlistLocalIgnoreOverwrite;
         this.userRules = userRules || [];
         this.userRuleFiles = userRuleFiles || getCfg('userRuleFiles')([]);
         this.outputFile = outputFile || getCfg('outputFile')(null);
@@ -103,13 +108,8 @@ class GenPAC {
         this.gfwlistModified = '';
         this.gfwlistContent = '';
         this.userRulesContent = '';
+        this.gfwlistFrom = '';
         this.pacContent = '';
-
-        if (!fs.existsSync('tmp') || !fs.statSync('tmp').isDirectory()) {
-            fs.mkdirSync('tmp');
-        }
-        // 清空 tmp 文件夹
-        utils.rmdirSyncR('tmp', false);
     }
 
     // 解析条件
@@ -187,17 +187,14 @@ class GenPAC {
         proxy           : ${this.pacProxy}
         gfwlist url     : ${this.gfwlistURL}
         gfwlist proxy   : ${this.gfwlistProxy}
+        gfwlist local   : ${this.gfwlistLocal}
+        ignore overwrite: ${this.gfwlistLocalIgnoreOverwrite}
         user rule       : ${Array.isArray(this.userRules) ? this.userRules.join(' ') : 'null'}
         user rule file  : ${Array.isArray(this.userRuleFiles) ? this.userRuleFiles.join(' ') : 'null'}
         config file     : ${this.configFile}
         output file     : ${this.outputFile}
         `;
         this.logger.info(options);
-
-        // pac的代理配置不检查准确性
-        if (!this.pacProxy) {
-            this.die('没有配置proxy');
-        }
 
         await this.fetchGFWList();
         this.getUserRules();
@@ -225,6 +222,7 @@ class GenPAC {
                 pacProxy: getv(cfg, 'proxy', null),
                 gfwlistURL: getv(cfg, 'gfwlist-url', DEFAULT_GFWLIST_URL),
                 gfwlistProxy: getv(cfg, 'gfwlist-proxy', null),
+                gfwlistLocal: getv(cfg, 'gfwlist-local', null),
                 // user_rule_files 应该是个列表
                 userRuleFiles: userRuleFiles ? [userRuleFiles] : [],
                 outputFile: getv(cfg, 'output', null),
@@ -249,56 +247,79 @@ class GenPAC {
         }
 
         try {
-            if (this.gfwlistURL) {
-                let proxy;
-                // 设置代理
-                if (this.gfwlistProxy) {
-                    const [input, proxyType, proxyUser, proxyPwd, proxyHost, proxyPort] = this.gfwlistProxy.match(/(PROXY|SOCKS|SOCKS5) (?:(.+):(.+)@)?(.+):(\d+)/i);
-                    if (PROXY_TYPE_MAP[proxyType] === PROXY_TYPE.PROXY_TYPE_HTTP) {
-                        proxy = 'http://';
-                    } else {
-                        proxy = `${proxyType}://`;
-                    }
-                    if (proxyUser || proxyPwd) {
-                        proxy = `${proxy}${proxyUser}:${proxyPwd}@`;
-                    }
-                    proxy = `${proxy}${proxyHost}:${proxyPort}`;
+            let proxy;
+            // 设置代理
+            if (this.gfwlistProxy) {
+                const [input, proxyType, proxyUser, proxyPwd, proxyHost, proxyPort] = this.gfwlistProxy.match(/(PROXY|SOCKS|SOCKS5) (?:(.+):(.+)@)?(.+):(\d+)/i);
+                if (PROXY_TYPE_MAP[proxyType] === PROXY_TYPE.PROXY_TYPE_HTTP) {
+                    proxy = 'http://';
+                } else {
+                    proxy = `${proxyType}://`;
                 }
-                const res = await request({
-                    method: 'get',
-                    uri: this.gfwlistURL,
-                    proxy,
-                });
-                this.gfwlistModified = res['last-modified'] || '';
-
-                fs.writeFile(
-                    'tmp/origin_gfwlist.txt',
-                    res,
-                    err => err && this.logger.error(err),
-                );
-
-                this.gfwlistContent = this.decodeGFWList(res);
-            } else if (fs.existsSync('tmp/origin_gfwlist.txt')) {
-                const res = (await nodeUtil.promisify(fs.readFile)(
-                    'tmp/origin_gfwlist.txt',
-                )).toString();
-                this.gfwlistModified = res['last-modified'] || '';
-                this.gfwlistContent = this.decodeGFWList(res);
+                if (proxyUser || proxyPwd) {
+                    proxy = `${proxy}${proxyUser}:${proxyPwd}@`;
+                }
+                proxy = `${proxy}${proxyHost}:${proxyPort}`;
             }
-            this.logger.info(`gfwlist已成功获取，更新时间: ${this.gfwlistModified}`);
+            const res = await request({
+                method: 'get',
+                uri: this.gfwlistURL,
+                proxy,
+            });
+
+            this.parseGFWList(res);
+            this.gfwlistFrom = 'online';
+            this.logger.info(`gfwlist 已成功获取，更新时间: ${this.gfwlistModified}`);
+            try {
+                if (!this.gfwlistLocalIgnoreOverwrite && this.gfwlistLocal) {
+                    const localPath = utils.abspath(this.gfwlistLocal);
+                    fs.writeFile(localPath, res, (err) => {
+                        if (err) {
+                            throw err;
+                        }
+                        this.logger.info(`gfwlist 已写入本地文件: ${localPath}`);
+                    });
+                }
+            } catch (error) {
+                this.logger.info(`gfwlist 写入本地文件失败: ${error}`);
+            }
         } catch (error) {
-            this.die(`GFWList 获取失败: ${error}。`);
+            this.logger.info(`gfwlist 在线获取失败: ${error}`);
+            this.readGFWListLocal();
         }
     }
 
-    decodeGFWList(originGFWList) {
-        const gfwlist = Buffer.from(originGFWList, 'base64');
-        if (this.verbose) {
-            fs.writeFile('tmp/gfwlist.txt', gfwlist, err => err && this.logger.error(err));
+    readGFWListLocal() {
+        try {
+            const localPath = utils.abspath(this.gfwlistLocal);
+            if (!fs.existsSync(localPath)) {
+                throw new Error('不存在');
+            }
+            this.parseGFWList(fs.readFileSync(localPath).toString());
+            this.gfwlistFrom = 'local';
+            this.logger.info(`gfwlist 已成功读取本地文件，更新时间: ${this.gfwlistModified}`);
+        } catch (error) {
+            this.die(`读取本地 gfwlist 文件失败: ${error}`);
         }
-        //! gfwlist文件内容的第一行内容是不符合语法规则的
-        //! 手动将其注释掉
-        return `! ${gfwlist.toString()}`;
+    }
+
+    parseGFWList(originGFWList) {
+        try {
+            const gfwlist = Buffer.from(originGFWList, 'base64');
+            //! gfwlist文件内容的第一行内容是不符合语法规则的
+            //! 手动将其注释掉
+            this.gfwlistContent = `! ${gfwlist.toString()}`;
+            const gfwlistLines = this.gfwlistContent.split(/\r?\n/);
+            if (!gfwlistLines[0].includes('AutoProxy')) {
+                throw new Error('文件不是有效的');
+            }
+            const lastModifiedLine = gfwlistLines.find(e => e.startsWith('!') && e.includes('Last Modified'));
+            if (lastModifiedLine) {
+                this.gfwlistModified = lastModifiedLine.replace('!', '').replace('Last Modified', '').replace(/:/, '').trim();
+            }
+        } catch (error) {
+            this.die(`gfwlist 解析失败: ${error}`);
+        }
     }
 
     // 获取用户定义的规则
@@ -321,13 +342,13 @@ class GenPAC {
     }
 
     generatePACContent() {
-        this.logger.info('解析规则并生成PAC内容...');
+        this.logger.info('解析规则并生成 PAC 内容...');
         const rules = [
             GenPAC.parseRules(this.userRulesContent),
             GenPAC.parseRules(this.gfwlistContent),
         ];
         const config = pacConfig(this.pacProxy, JSON.stringify(rules, null, 4));
-        const comment = pacComment(this.gfwlistModified);
+        const comment = pacComment(this.gfwlistModified, this.gfwlistFrom || '-');
         this.pacContent = `${comment}${config}${PAC_FUNCS}`;
     }
 
@@ -345,7 +366,7 @@ class GenPAC {
                 console.info(`PAC 文件已生成: ${output}`);
             })
             .catch((err) => {
-                this.die(`写入文件${output}失败: ${err}`);
+                this.die(`写入文件 ${output} 失败: ${err}`);
             });
     }
 }
