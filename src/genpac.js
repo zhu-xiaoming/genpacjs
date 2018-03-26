@@ -21,7 +21,16 @@ const pacComment = (lastModified) => {
 `;
 };
 
+const pacConfig = (proxy, rules) => {
+    return `
+var proxy = '${proxy}';
+var rules = ${rules};
+`;
+};
+
 const PAC_FUNCS = `
+var lastRule = '';
+
 var regExpMatch = function(url, pattern) {
     try {
         return new RegExp(pattern).test(url);
@@ -31,26 +40,24 @@ var regExpMatch = function(url, pattern) {
 };
 
 var testURL = function(url, pack) {
-    var D = "DIRECT",
-        P = config[0],
-        j = 0;
-    for (j in pack[0])
-        if(regExpMatch(url, pack[0][j])) return D;
-    for (j in pack[1])
-        if (shExpMatch(url, pack[1][j])) return D;
-    for (j in pack[2])
-        if(regExpMatch(url, pack[2][j])) return P;
-    for (j in pack[3])
-        if(shExpMatch(url, pack[3][j])) return P;
+    for (var i = 0; i < packs.length; i++) {
+        for (var j = 0; j < packs[i].length; j++) {
+            lastRule = packs[i][j];
+            if ( (i % 2 == 0 && regExpMatch(url, lastRule)) 
+                || (i % 2 != 0 && shExpMatch(url, lastRule)))
+                return (i <= 1) ? 'DIRECT' : proxy;
+        }
+    }
+    lastRule = '';
 };
 
 function FindProxyForURL(url, host) {
-    for (var i = 1; i < config.length; i++) {
-        var ret = testURL(url, config[i]);
+    for (var i = 0; i < rules.length; i++) {
+        var ret = testURL(url, rules[i]);
         if (ret !== undefined)
             return ret;
     }
-    return "DIRECT";
+    return 'DIRECT';
 }
 `;
 
@@ -315,14 +322,13 @@ class GenPAC {
 
     generatePACContent() {
         this.logger.info('解析规则并生成PAC内容...');
-        let config = [
-            this.pacProxy,
+        const rules = [
             GenPAC.parseRules(this.userRulesContent),
             GenPAC.parseRules(this.gfwlistContent),
         ];
-        config = `var config = ${JSON.stringify(config, null, 4)};`;
+        const config = pacConfig(this.pacProxy, JSON.stringify(rules, null, 4));
         const comment = pacComment(this.gfwlistModified);
-        this.pacContent = `${comment}\n${config}\n${PAC_FUNCS}`;
+        this.pacContent = `${comment}${config}${PAC_FUNCS}`;
     }
 
     generatePACFile() {
