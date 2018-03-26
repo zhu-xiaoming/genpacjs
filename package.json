@@ -1,6 +1,6 @@
 {
   "name": "genpac",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "基于 gfwlist 的代理自动配置(Proxy Auto-config)文件生成工具",
   "main": "./src/genpac.js",
   "bin": {

@@ -69,12 +69,12 @@ const PROXY_TYPE_MAP = {
 class GenPAC {
     constructor(
         pacProxy = null,
+        outputFile = null,
         gfwlistURL = DEFAULT_GFWLIST_URL,
         gfwlistProxy = null,
         userRules = [],
         userRuleFiles = [],
         configFile = null,
-        outputFile = null,
         verbose = false,
     ) {
         this.verbose = verbose;
@@ -83,7 +83,7 @@ class GenPAC {
 
         // 直接输入的参数优先级高于config文件
         this.configFile = configFile;
-        const cfg = this.readConfig(utils.abspath(this.configFile));
+        const cfg = this.readConfig(this.configFile);
 
         const getCfg = _.curry(_.get)(cfg);
         this.pacProxy = pacProxy || getCfg('pacProxy')(null);
@@ -195,7 +195,7 @@ class GenPAC {
         await this.fetchGFWList();
         this.getUserRules();
         this.generatePACContent();
-        this.generatePACFile();
+        return this.generatePACFile();
     }
 
     readConfig(configFile) {
@@ -325,23 +325,22 @@ class GenPAC {
         this.pacContent = `${comment}\n${config}\n${PAC_FUNCS}`;
     }
 
-    generatePACFile(callback) {
+    generatePACFile() {
         if (!this.pacContent) {
-            this.logger.error('没有生成 PAC 内容，无法生成 PAC 文件');
-            return;
+            this.die('没有生成 PAC 内容，无法生成 PAC 文件');
         }
         if (!this.outputFile) {
             console.info(this.pacContent);
-            return;
+            return this.pacContent;
         }
         const output = utils.abspath(this.outputFile);
-        fs.writeFile(output, this.pacContent, (err) => {
-            if (err) {
+        return nodeUtil.promisify(fs.writeFile)(output, this.pacContent)
+            .then(() => {
+                console.info(`PAC 文件已生成: ${output}`);
+            })
+            .catch((err) => {
                 this.die(`写入文件${output}失败: ${err}`);
-            }
-            console.info(`PAC 文件已生成: ${output}`);
-            callback && callback();
-        });
+            });
     }
 }
 

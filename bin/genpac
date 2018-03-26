@@ -7,7 +7,7 @@ const GenPAC = require('../src/genpac');
 const packageInfo = require('../package.json');
 
 const { argv } = yargs
-    .usage('Usage: genpacjs [options]')
+    .usage('Usage: genpac [options]')
     .help('help')
     .alias('h', 'help')
     .version(packageInfo.version)
@@ -61,12 +61,12 @@ const {
 
 const genpac = new GenPAC(
     proxy,
+    output,
     gfwlistURL,
     gfwlistProxy,
     userRule,
     userRuleFrom,
     configFrom,
-    output,
     verbose,
 );
 
