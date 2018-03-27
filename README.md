@@ -39,6 +39,6 @@ npm install --save genpac
 #### 使用
 ```js
 var GenPAC = require('genpac');
-var genpac = new GenPAC('SOCKS5 127.0.0.1:1080')
+var genpac = new GenPAC()
 genpac.generate();
 ```
