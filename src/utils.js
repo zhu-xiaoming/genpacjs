@@ -37,6 +37,9 @@ function rmdirSyncR(dirPath, removeSelf) {
 }
 
 function abspath(relativePath) {
+    if (!relativePath) {
+        return relativePath;
+    }
     if (relativePath.startsWith('~')) {
         return path.join(os.homedir(), relativePath.slice(1));
     }
