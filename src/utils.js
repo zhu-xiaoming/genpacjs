@@ -56,9 +56,15 @@ function strip(string, trimStr) {
     return string.replace(new RegExp(s, 'g'), '');
 }
 
+function resolveApp(relativePath) {
+    const appRoot = path.resolve(__dirname, '../');
+    return path.resolve(appRoot, relativePath);
+}
+
 
 module.exports = {
     rmdirSyncR,
     abspath,
     strip,
+    resolveApp,
 };

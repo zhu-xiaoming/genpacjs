@@ -3,7 +3,7 @@
 
 const yargs = require('yargs');
 
-const GenPAC = require('../src/genpac');
+const GenPAC = require('../src/index');
 const packageInfo = require('../package.json');
 
 const { argv } = yargs
@@ -30,7 +30,7 @@ const { argv } = yargs
         type: 'string',
         description: '本地 gfwlist 文件地址，当在线地址获取失败时使用',
     })
-    .option('gfwlist-local-ignore-overwrite', {
+    .option('disable-overwrite', {
         type: 'boolean',
         default: false,
         description: '当在线 gfwlist 成功获取且 --gfwlist-local 存在时，默认会将在线内容覆盖到本地，此项设置后则不覆盖',
@@ -51,36 +51,29 @@ const { argv } = yargs
         type: 'string',
         description: '输出生成的文件，如果没有此选项，将直接打印结果',
     })
-    .option('verbose', {
-        default: false,
-        type: 'boolean',
-        description: '是否输出详细处理过程',
-    });
 
 const {
     proxy,
     'gfwlist-url': gfwlistURL,
     'gfwlist-proxy': gfwlistProxy,
     'gfwlist-local': gfwlistLocal,
-    'gfwlist-local-ignore-overwrite': gfwlistLocalIgnoreOverwrite,
+    'disable-overwrite': disableOverwrite,
     'user-rule': userRule,
     'user-rule-from': userRuleFrom,
     'config-from': configFrom,
     output,
-    verbose,
 } = argv;
 
 const genpac = new GenPAC({
-    pacProxy: proxy,
-    outputFile: output,
+    proxy,
+    output,
     gfwlistURL,
     gfwlistProxy,
     gfwlistLocal,
-    gfwlistLocalIgnoreOverwrite,
-    userRules: userRule,
-    userRuleFiles: userRuleFrom,
-    configFile: configFrom,
-    verbose,
+    disableOverwrite,
+    userRule,
+    userRuleFrom,
+    configFrom,
 });
 
 genpac.generate();
