@@ -46,7 +46,7 @@ class GenPAC {
         if (!Array.isArray(this.userRule)) {
             this.userRule = [this.userRule];
         }
-        this.userRuleFrom = _.isEmpty(userRuleFrom) ? userRuleFrom : cfg.userRuleFrom;
+        this.userRuleFrom = !_.isEmpty(userRuleFrom) ? userRuleFrom : cfg.userRuleFrom;
         if (!Array.isArray(this.userRuleFrom)) {
             this.userRuleFrom = [this.userRuleFrom];
         }
