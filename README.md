@@ -1,9 +1,9 @@
 # GenPAC
-[![npm version](https://badge.fury.io/js/genpac.png)](https://badge.fury.io/js/genpac)
+[![npm version](https://img.shields.io/npm/v/genpac.svg?style=flat-square)](https://www.npmjs.com/package/genpac)
 
 基于 gfwlist 的代理自动配置(Proxy Auto-config)文件生成工具
 
-参考 JinnLynn 的 [genpac v1.0.3](https://github.com/JinnLynn/genpac/tree/v1.0.3)，使用 node.js 重构
+参考 JinnLynn 的 [genpac v1.1.0](https://github.com/JinnLynn/genpac/tree/v1.1.0)，使用 node.js 重构
 
 ## 安装与使用
 
@@ -17,18 +17,21 @@ npm install -g genpac
 Usage: genpac [options]
 
 Options:
-  --proxy, -p       PAC文件中使用的代理信息                             [string]
-  --gfwlist-url     gfwlist 地址，一般不需要更改              [string] [default:
+  --proxy, -p          PAC文件中使用的代理信息                          [string]
+  --gfwlist-url        gfwlist 地址，一般不需要更改           [string] [default:
          "https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt"]
-  --gfwlist-proxy   获取 gfwlist 时的代理设置，如果你可以正常访问
-                    gfwlist，则无必要使用该选项                         [string]
-  --user-rule       自定义规则，该选项允许重复使用                       [array]
-  --user-rule-from  从文件中读取自定义规则，该选项允许重复使用           [array]
-  --config-from     从文件中读取配置信息                                [string]
-  --output          输出生成的文件，如果没有此选项，将直接打印结果      [string]
-  --verbose         是否输出详细处理过程              [boolean] [default: false]
-  -h, --help        Show help                                          [boolean]
-  -v, --version     Show version number                                [boolean]
+  --gfwlist-proxy      获取 gfwlist 时的代理设置，如果你可以正常访问
+                       gfwlist，则无必要使用该选项                      [string]
+  --gfwlist-local      本地 gfwlist 文件地址，当在线地址获取失败时使用  [string]
+  --disable-overwrite  当在线 gfwlist 成功获取且 --gfwlist-local
+                       存在时，默认会将在线内容覆盖到本地，此项设置后则不覆盖
+                                                      [boolean] [default: false]
+  --user-rule          自定义规则，该选项允许重复使用                    [array]
+  --user-rule-from     从文件中读取自定义规则，该选项允许重复使用        [array]
+  --config-from        从文件中读取配置信息                             [string]
+  --output             输出生成的文件，如果没有此选项，将直接打印结果   [string]
+  -h, --help           Show help                                       [boolean]
+  -v, --version        Show version number                             [boolean]
 ```
 
 ### 代码调用
@@ -42,3 +45,30 @@ var GenPAC = require('genpac');
 var genpac = new GenPAC()
 genpac.generate();
 ```
+
+## 配置
+
+支持通过 `--config-from` 参数读入配置信息，配置文件书写方法可参考 [sample/config.ini](https://github.com/little-tomorrow/genpacjs/blob/master/sample/config.ini)
+
+## 自定义的代理规则
+
+支持通过 `--user-rule` 自定义单个规则或 `--user-rule-from` 读入自定义规则文件，这两个参数均可重复使用。
+
+自定义规则文件可参考 [sample/user-rules.txt](https://github.com/little-tomorrow/genpacjs/blob/master/sample/user-rules.txt)
+
+自定义规则的语法与 gfwlist 相同，使用 AdBlock Plus 过滤规则( http://adblockplus.org/en/filters )，简述如下:
+  
+1. 通配符支持，如`*.example.com/*` 实际书写时可省略`*`为`.example.com/`
+2. 正则表达式支持，以`\`开始和结束， 如`\[\w]+:\/\/example.com\\`
+3. 例外规则 `@@`，如`@@*.example.com/*` 满足`@@`后规则的地址不使用代理
+4. 匹配地址开始和结尾 |，如`|http://example.com`、`example.com|`分别表示以`http://example.com`开始和以`example.com`结束的地址
+5. `||` 标记，如`||example.com` 则`http://example.com https://example.com ftp://example.com`等地址均满足条件
+6. 注释 `!` 如`! Comment`
+
+配置自定义规则时需谨慎，尽量避免与gfwlist产生冲突，或将一些本不需要代理的网址添加到代理列表
+
+规则优先级从高到底为: user-rule > user-rule-from > gfwlist
+
+## LICENSE
+
+The MIT License.
