@@ -30,9 +30,9 @@ const { argv } = yargs
         type: 'string',
         description: '本地 gfwlist 文件地址，当在线地址获取失败时使用',
     })
-    .option('disable-overwrite', {
+    .option('update-gfwlist-local', {
         type: 'boolean',
-        default: false,
+        default: true,
         description: '当在线 gfwlist 成功获取且 --gfwlist-local 存在时，默认会将在线内容覆盖到本地，此项设置后则不覆盖',
     })
     .option('user-rule', {
@@ -48,20 +48,34 @@ const { argv } = yargs
         description: '从文件中读取配置信息',
     })
     .option('output', {
+        alias: 'o',
         type: 'string',
         description: '输出生成的文件，如果没有此选项，将直接打印结果',
     })
+    .option('compress', {
+        alias: 'z',
+        type: 'boolean',
+        default: false,
+        description: '压缩输出',
+    })
+    .option('base64', {
+        type: 'boolean',
+        default: false,
+        description: 'base64加密输出，注意：部分浏览器并不支持经过base64加密的pac文件',
+    });
 
 const {
     proxy,
     'gfwlist-url': gfwlistURL,
     'gfwlist-proxy': gfwlistProxy,
     'gfwlist-local': gfwlistLocal,
-    'disable-overwrite': disableOverwrite,
+    'update-gfwlist-local': updateGFWListLocal,
     'user-rule': userRule,
     'user-rule-from': userRuleFrom,
     'config-from': configFrom,
     output,
+    compress,
+    base64,
 } = argv;
 
 const genpac = new GenPAC({
@@ -70,10 +84,12 @@ const genpac = new GenPAC({
     gfwlistURL,
     gfwlistProxy,
     gfwlistLocal,
-    disableOverwrite,
+    updateGFWListLocal,
     userRule,
     userRuleFrom,
     configFrom,
+    compress,
+    base64,
 });
 
 genpac.generate();

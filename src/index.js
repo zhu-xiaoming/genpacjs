@@ -10,6 +10,10 @@ const utils = require('./utils');
 const VERSION = packageInfo.version;
 const DEFAULT_GFWLIST_URL = 'https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt';
 
+const PAC_TPL = 'pac-tpl.js';
+const PAC_TPL_MIN = 'pac-tpl.min.js';
+const PAC_TPL_BASE64 = 'pac-tpl.base64.js';
+
 const SOCKS4 = 'socks4';
 const SOCKS5 = 'socks5';
 const HTTP = 'http';
@@ -28,20 +32,27 @@ class GenPAC {
         gfwlistURL = DEFAULT_GFWLIST_URL,
         gfwlistProxy = '',
         gfwlistLocal = '',
-        disableOverwrite = false,
+        updateGFWListLocal,
         userRule = [],
         userRuleFrom = [],
         configFrom = '',
+        compress,
+        base64,
     } = {}) {
         this.configFrom = utils.abspath(configFrom);
-        this.disableOverwrite = disableOverwrite;
-
+        
         const cfg = GenPAC.readConfig(this.configFrom);
         this.proxy = proxy || cfg.proxy;
         this.gfwlistURL = gfwlistURL || cfg.gfwlistURL;
         this.gfwlistProxy = gfwlistProxy || cfg.gfwlistProxy;
+
+        this.updateGFWListLocal = utils.convBool(typeof updateGFWListLocal !== 'undefined' ? updateGFWListLocal : cfg.updateGFWListLocal);
+        this.compress = utils.convBool(typeof compress !== 'undefined' ? compress : cfg.compress);
+        this.base64 = utils.convBool(typeof base64 !== 'undefined' ? base64 : cfg.base64);
+
         this.output = utils.abspath(output || cfg.output);
         this.gfwlistLocal = utils.abspath(gfwlistLocal || cfg.gfwlistLocal);
+
         this.userRule = userRule;
         if (!Array.isArray(this.userRule)) {
             this.userRule = [this.userRule];
@@ -49,6 +60,10 @@ class GenPAC {
         this.userRuleFrom = !_.isEmpty(userRuleFrom) ? userRuleFrom : cfg.userRuleFrom;
         if (!Array.isArray(this.userRuleFrom)) {
             this.userRuleFrom = [this.userRuleFrom];
+        }
+
+        if (this.base64) {
+            GenPAC.logError('WARNING: some brower DO NOT support pac file which was encoded by base64.');
         }
 
         this._ret = {
@@ -94,12 +109,15 @@ class GenPAC {
             GenPAC.logError('read config file fail.');
         }
         return {
-            proxy: getv('proxy', null),
-            output: getv('output', null),
+            proxy: getv('proxy', ''),
+            output: getv('output', ''),
             gfwlistURL: getv('gfwlist-url', DEFAULT_GFWLIST_URL),
-            gfwlistProxy: getv('gfwlist-proxy', null),
-            gfwlistLocal: getv('gfwlist-local', null),
-            userRuleFrom: getv('user-rule-from', null),
+            gfwlistProxy: getv('gfwlist-proxy', ''),
+            gfwlistLocal: getv('gfwlist-local', ''),
+            userRuleFrom: getv('user-rule-from', []),
+            updateGFWListLocal: getv('update-gfwlist-local', true),
+            compress: getv('compress', false),
+            base64: getv('base64', false),
         };
     }
 
@@ -195,7 +213,7 @@ class GenPAC {
         try {
             content = await this.buildOpener();
             this._ret.gfwlistFrom = `online[${this.gfwlistURL}]`;
-            if (this.gfwlistLocal && !this.disableOverwrite) {
+            if (this.gfwlistLocal && this.updateGFWListLocal) {
                 fs.writeFile(this.gfwlistLocal, content, (err) => {});
             }
         } catch (error) {
@@ -211,7 +229,7 @@ class GenPAC {
         }
         try {
             content = `! ${Buffer.from(content, 'base64').toString('utf8')}`;
-            content = content.split(/\r\n|[\n\r\u0085\u2028\u2029]/g);
+            content = utils.splitLines(content);
             const lastModifiedLine = content.find(e => e.startsWith('!') && e.includes('Last Modified'));
             if (lastModifiedLine) {
                 this._ret.modified = utils.strip(lastModifiedLine.split(':').slice(1).join(':'));
@@ -234,25 +252,44 @@ class GenPAC {
                 GenPAC.logError('read user rule file fail. ', f);
             }
         });
-        return rules.concat(ruleString.split(/\r\n|[\n\r\u0085\u2028\u2029]/g));
+        return rules.concat(utils.splitLines(ruleString));
     }
 
     startParse(gfwlistRules, userRules) {
         const rules = [GenPAC.parseRules(userRules), GenPAC.parseRules(gfwlistRules)];
-        this._ret.rules = JSON.stringify(rules, null, 4);
+        if (this.compress) {
+            this._ret.rules = JSON.stringify(rules);
+        } else {
+            this._ret.rules = JSON.stringify(rules, null, 4);
+        }
         this._ret.generated = new Date().toString();
     }
 
     outputPAC() {
-        let content = fs.readFileSync(utils.resolveApp('src/pac-tpl.js'), {
+        const pacTpl = utils.pkgdata(this.compress ? PAC_TPL_MIN : PAC_TPL);
+        let content = fs.readFileSync(pacTpl, {
             encoding: 'utf8',
         });
-        content = content.replace('__VERSION__', this._ret.version);
-        content = content.replace('__GENERATED__', this._ret.generated);
-        content = content.replace('__MODIFIED__', this._ret.modified);
-        content = content.replace('__GFWLIST_FROM__', this._ret.gfwlistFrom);
-        content = content.replace('__PROXY__', this._ret.proxy);
-        content = content.replace('__RULES__', this._ret.rules);
+
+        content = utils.replace(content, {
+            __VERSION__: this._ret.version,
+            __GENERATED__: this._ret.generated,
+            __MODIFIED__: this._ret.modified,
+            __GFWLIST_FROM__: this._ret.gfwlistFrom,
+            __PROXY__: this._ret.proxy,
+            __RULES__: this._ret.rules,
+        });
+
+        if (this.base64) {
+            const b64 = fs.readFileSync(utils.pkgdata(PAC_TPL_BASE64), {
+                encoding: 'utf8',
+            });
+            content = utils.replace(b64, {
+                __BASE64__: Buffer.from(content).toString('base64'),
+                __VERSION__: this._ret.version,
+            });
+        }
+
         if (!this.output) {
             console.info(content);
             return;
