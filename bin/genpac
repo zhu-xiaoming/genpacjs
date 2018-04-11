@@ -1,10 +1,17 @@
 #! /usr/bin/env node
 // -*- js -*-
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
 
 const yargs = require('yargs');
 
+const utils = require('../src/utils');
 const GenPAC = require('../src/index');
 const packageInfo = require('../package.json');
+
+const CONFIG_SAMPLE = 'config-sample.ini';
+const USER_RULE_SAMPLE = 'user-rules-sample.txt';
 
 const { argv } = yargs
     .usage('Usage: genpac [options]')
@@ -33,7 +40,8 @@ const { argv } = yargs
     .option('update-gfwlist-local', {
         type: 'boolean',
         default: true,
-        description: '当在线 gfwlist 成功获取且 --gfwlist-local 存在时，默认会将在线内容覆盖到本地，此项设置后则不覆盖',
+        description:
+            '当在线 gfwlist 成功获取且 --gfwlist-local 存在时，默认会将在线内容覆盖到本地，此项设置后则不覆盖',
     })
     .option('user-rule', {
         type: 'array',
@@ -62,34 +70,75 @@ const { argv } = yargs
         type: 'boolean',
         default: false,
         description: 'base64加密输出，注意：部分浏览器并不支持经过base64加密的pac文件',
+    })
+    .option('init', {
+        type: 'string',
+        description: '初始化配置和用户规则文件',
     });
 
-const {
-    proxy,
-    'gfwlist-url': gfwlistURL,
-    'gfwlist-proxy': gfwlistProxy,
-    'gfwlist-local': gfwlistLocal,
-    'update-gfwlist-local': updateGFWListLocal,
-    'user-rule': userRule,
-    'user-rule-from': userRuleFrom,
-    'config-from': configFrom,
-    output,
-    compress,
-    base64,
-} = argv;
+if (typeof argv.init === 'string') {
+    try {
+        const initPath = utils.abspath(argv.init || '.');
+        if (!fs.existsSync(initPath) || !fs.statSync(initPath).isDirectory()) {
+            fs.mkdirSync(initPath);
+        }
+        const configDst = path.join(initPath, 'config.ini');
+        const userRuleDst = path.join(initPath, 'user-rules.txt');
+        function writeConfigFile() {
+            fs.copyFileSync(utils.pkgdata(CONFIG_SAMPLE), configDst);
+            fs.copyFileSync(utils.pkgdata(USER_RULE_SAMPLE), userRuleDst);
+            console.log('init success');
+            process.exit();
+        }
+        if (fs.existsSync(configDst) || fs.existsSync(userRuleDst)) {
+            const rl = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout,
+            });
 
-const genpac = new GenPAC({
-    proxy,
-    output,
-    gfwlistURL,
-    gfwlistProxy,
-    gfwlistLocal,
-    updateGFWListLocal,
-    userRule,
-    userRuleFrom,
-    configFrom,
-    compress,
-    base64,
-});
+            rl.question('file already exists, overwrite?[y|n]: ', (answer) => {
+                if (answer.toLowerCase() !== 'y') {
+                    throw new Error('file already exists.');
+                } else {
+                    rl.close();
+                    writeConfigFile();
+                }
+            });
+        } else {
+            writeConfigFile();
+        }
+    } catch (error) {
+        console.log(`init fail: ${error}`);
+        process.exit(1);
+    }
+} else {
+    const {
+        proxy,
+        'gfwlist-url': gfwlistURL,
+        'gfwlist-proxy': gfwlistProxy,
+        'gfwlist-local': gfwlistLocal,
+        'update-gfwlist-local': updateGFWListLocal,
+        'user-rule': userRule,
+        'user-rule-from': userRuleFrom,
+        'config-from': configFrom,
+        output,
+        compress,
+        base64,
+    } = argv;
 
-genpac.generate();
+    const genpac = new GenPAC({
+        proxy,
+        output,
+        gfwlistURL,
+        gfwlistProxy,
+        gfwlistLocal,
+        updateGFWListLocal,
+        userRule,
+        userRuleFrom,
+        configFrom,
+        compress,
+        base64,
+    });
+
+    genpac.generate();
+}

@@ -1,4 +1,4 @@
-! 用户自定义规则语法
+! 用户自定义的代理规则
 ! 
 ! 语法与gfwlist相同，即AdBlock Plus过滤规则
 !
@@ -12,17 +12,17 @@
 !
 ! 更详细说明 请访问 http://adblockplus.org/en/filters
 !
-! 配置该文件时需谨慎，尽量避免与gfwlist产生冲突，
-! 或将一些本不需要代理的网址添加到代理列表
+! 配置该文件时需谨慎，尽量避免与gfwlist产生冲突，或将一些本不需要代理的网址添加到代理列表
 ! 
 
 ! Tip: 在最终生成的PAC文件中，用户定义规则先于gfwlist规则被处理
 !      因此可以在这里添加一些常用网址规则，或能减少在访问这些网址进行查询的时间
 !      如:
+
 @@sina.com
 @@163.com
+
 twitter.com
 youtube.com
-code.google.com
-googlecode.com
-sourceforge.net
+||google.com
+||wikipedia.org

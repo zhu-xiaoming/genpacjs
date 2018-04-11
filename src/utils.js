@@ -67,7 +67,7 @@ function pkgdata(dataName) {
 
 function convBool(value) {
     if (typeof value === 'string') {
-        return value.toLowerCase() === 'true' || false;
+        return value.toLowerCase() === 'true';
     }
     return Boolean(value);
 }
@@ -85,6 +85,10 @@ function splitLines(string) {
     // ... it shall recognize not only CRLF, LF, CR,
     // but also NEL, PS and LS.
     return string.split(/\r\n|[\n\r\u0085\u2028\u2029]/g);
+}
+
+function checkUndefined(value, defaultValue) {
+    return typeof value !== 'undefined' ? value : defaultValue;
 }
 
 // https://github.com/getify/JSON.minify/blob/0827b7fd0659d0f10135f4ade0307a625a45a82d/minify.json.js
@@ -164,4 +168,5 @@ module.exports = {
     convBool,
     splitLines,
     replace,
+    checkUndefined,
 };

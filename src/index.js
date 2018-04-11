@@ -8,7 +8,7 @@ const packageInfo = require('../package.json');
 const utils = require('./utils');
 
 const VERSION = packageInfo.version;
-const DEFAULT_GFWLIST_URL = 'https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt';
+const DEFAULT_URL = 'https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt';
 
 const PAC_TPL = 'pac-tpl.js';
 const PAC_TPL_MIN = 'pac-tpl.min.js';
@@ -29,7 +29,7 @@ class GenPAC {
     constructor({
         proxy = '',
         output = '',
-        gfwlistURL = DEFAULT_GFWLIST_URL,
+        gfwlistURL = DEFAULT_URL,
         gfwlistProxy = '',
         gfwlistLocal = '',
         updateGFWListLocal,
@@ -39,19 +39,21 @@ class GenPAC {
         compress,
         base64,
     } = {}) {
-        this.configFrom = utils.abspath(configFrom);
-        
+        this.configFrom = configFrom;
+
         const cfg = GenPAC.readConfig(this.configFrom);
         this.proxy = proxy || cfg.proxy;
         this.gfwlistURL = gfwlistURL || cfg.gfwlistURL;
         this.gfwlistProxy = gfwlistProxy || cfg.gfwlistProxy;
 
-        this.updateGFWListLocal = utils.convBool(typeof updateGFWListLocal !== 'undefined' ? updateGFWListLocal : cfg.updateGFWListLocal);
-        this.compress = utils.convBool(typeof compress !== 'undefined' ? compress : cfg.compress);
-        this.base64 = utils.convBool(typeof base64 !== 'undefined' ? base64 : cfg.base64);
+        this.updateGFWListLocal = utils.convBool(
+            utils.checkUndefined(updateGFWListLocal, cfg.updateGFWListLocal),
+        );
+        this.compress = utils.convBool(utils.checkUndefined(compress, cfg.compress));
+        this.base64 = utils.convBool(utils.checkUndefined(base64, cfg.base64));
 
-        this.output = utils.abspath(output || cfg.output);
-        this.gfwlistLocal = utils.abspath(gfwlistLocal || cfg.gfwlistLocal);
+        this.output = output || cfg.output;
+        this.gfwlistLocal = gfwlistLocal || cfg.gfwlistLocal;
 
         this.userRule = userRule;
         if (!Array.isArray(this.userRule)) {
@@ -63,7 +65,10 @@ class GenPAC {
         }
 
         if (this.base64) {
-            GenPAC.logError('WARNING: some brower DO NOT support pac file which was encoded by base64.');
+            this.compress = true;
+            GenPAC.logError(
+                'WARNING: some brower DO NOT support pac file which was encoded by base64.',
+            );
         }
 
         this._ret = {
@@ -103,15 +108,15 @@ class GenPAC {
         }
         try {
             const cfgParser = new ConfigParser();
-            cfgParser.read(configFrom);
+            cfgParser.read(utils.abspath(configFrom));
             cfg = cfgParser.items('config');
         } catch (error) {
-            GenPAC.logError('read config file fail.');
+            GenPAC.logError('read config file fail.', { exit: true });
         }
         return {
             proxy: getv('proxy', ''),
             output: getv('output', ''),
-            gfwlistURL: getv('gfwlist-url', DEFAULT_GFWLIST_URL),
+            gfwlistURL: getv('gfwlist-url', DEFAULT_URL),
             gfwlistProxy: getv('gfwlist-proxy', ''),
             gfwlistLocal: getv('gfwlist-local', ''),
             userRuleFrom: getv('user-rule-from', []),
@@ -145,14 +150,13 @@ class GenPAC {
 
             let isDirect = false;
             let isRegexp = true;
-            // const originLine = line;
-            // 例外
+            // exception rules
             if (line.startsWith('@@')) {
                 line = line.slice(2);
                 isDirect = true;
             }
 
-            // 正则表达式语法
+            // regular expressions
             if (line.startsWith('/') && line.endsWith('/')) {
                 line = line.slice(1, -1);
             } else if (line.indexOf('^') !== -1) {
@@ -160,7 +164,15 @@ class GenPAC {
                 line = line.replace(/\\\^/g, String.raw`(?:[^\w\-.%\u0080-\uFFFF]|$)`);
             } else if (line.startsWith('||')) {
                 line = wildcardToRegExp(line.slice(2));
-                // 由于后面输出时使用 JSON.stringify 会自动对其转义，因此这里可不使用对\转义
+                // When using the constructor function, the normal string
+                // escape rules (preceding special characters with \ when
+                // included in a string) are necessary.
+                // For example, the following are equivalent:
+                // re = new RegExp('\\w+')
+                // re = /\w+/
+                // via: http://aptana.com/reference/api/RegExp.html
+                // line = r'^[\\w\\-]+:\\/+(?!\\/)(?:[^\\/]+\\.)?' + line
+                // JSON.stringify will escape `\`
                 line = String.raw`^[\w\-]+:\/+(?!\/)(?:[^\/]+\.)?` + line;
             } else if (line.startsWith('|') || line.endsWith('|')) {
                 line = wildcardToRegExp(line);
@@ -194,7 +206,15 @@ class GenPAC {
         let proxy;
         // 设置代理
         if (this.gfwlistProxy) {
-            const [input, proxyType, proxyUser, proxyPwd, proxyHost, proxyPort] = this.gfwlistProxy.match(/(PROXY|SOCKS|SOCKS4|SOCKS5) (?:(.+):(.+)@)?(.+):(\d+)/i);
+            // format: PROXY|SOCKS|SOCKS4|SOCKS5 [USR:PWD]@HOST:PORT
+            const [
+                input,
+                proxyType,
+                proxyUser,
+                proxyPwd,
+                proxyHost,
+                proxyPort,
+            ] = this.gfwlistProxy.match(/(PROXY|SOCKS|SOCKS4|SOCKS5) (?:(.+):(.+)@)?(.+):(\d+)/i);
             proxy = `${PROXY_TYPES[proxyType.toUpperCase()]}://`;
             if (proxyUser || proxyPwd) {
                 proxy = `${proxy}${proxyUser}:${proxyPwd}@`;
@@ -209,32 +229,47 @@ class GenPAC {
     }
 
     async fetchGFWList() {
-        let content;
+        let content = '';
         try {
             content = await this.buildOpener();
             this._ret.gfwlistFrom = `online[${this.gfwlistURL}]`;
             if (this.gfwlistLocal && this.updateGFWListLocal) {
-                fs.writeFile(this.gfwlistLocal, content, (err) => {});
+                fs.writeFile(utils.abspath(this.gfwlistLocal), content, (err) => {});
             }
         } catch (error) {
             try {
-                content = fs.readFileSync(this.gfwlistLocal, {
+                content = fs.readFileSync(utils.abspath(this.gfwlistLocal), {
                     encoding: 'utf8',
                 });
                 this._ret.gfwlistFrom = `local[${this.gfwlistLocal}]`;
             } catch (err) {}
         }
         if (!content) {
-            GenPAC.logError('fetch gfwlist fail.', { exit: true });
+            if (this.gfwlistURL !== '-' || this.gfwlistLocal) {
+                GenPAC.logError('fetch gfwlist fail.', { exit: true });
+            } else {
+                this._ret.gfwlistFrom = 'unused';
+            }
         }
         try {
             content = `! ${Buffer.from(content, 'base64').toString('utf8')}`;
             content = utils.splitLines(content);
-            const lastModifiedLine = content.find(e => e.startsWith('!') && e.includes('Last Modified'));
+            const lastModifiedLine = content.find(
+                e => e.startsWith('!') && e.includes('Last Modified'),
+            );
             if (lastModifiedLine) {
-                this._ret.modified = utils.strip(lastModifiedLine.split(':').slice(1).join(':'));
+                this._ret.modified = utils.strip(
+                    lastModifiedLine
+                        .split(':')
+                        .slice(1)
+                        .join(':'),
+                );
             }
         } catch (error) {}
+
+        if (!this._ret.modified) {
+            this._ret.modified = '-';
+        }
 
         return content;
     }
@@ -247,7 +282,9 @@ class GenPAC {
                 return;
             }
             try {
-                ruleString = `${ruleString}\n${fs.readFileSync(utils.abspath(f), { encoding: 'utf8' })}`;
+                ruleString = `${ruleString}\n${fs.readFileSync(utils.abspath(f), {
+                    encoding: 'utf8',
+                })}`;
             } catch (error) {
                 GenPAC.logError('read user rule file fail. ', f);
             }
@@ -262,7 +299,8 @@ class GenPAC {
         } else {
             this._ret.rules = JSON.stringify(rules, null, 4);
         }
-        this._ret.generated = new Date().toString();
+        this._ret.generated = new Date();
+        this._ret.generated = this._ret.generated.toLocaleString();
     }
 
     outputPAC() {
@@ -290,11 +328,11 @@ class GenPAC {
             });
         }
 
-        if (!this.output) {
+        if (this.output && this.output !== '-') {
+            fs.writeFile(utils.abspath(this.output), content, (err) => {});
+        } else {
             console.info(content);
-            return;
         }
-        fs.writeFile(this.output, content, (err) => {});
     }
 
     async generate() {
