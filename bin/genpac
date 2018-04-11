@@ -77,39 +77,35 @@ const { argv } = yargs
     });
 
 if (typeof argv.init === 'string') {
-    try {
-        const initPath = utils.abspath(argv.init || '.');
-        if (!fs.existsSync(initPath) || !fs.statSync(initPath).isDirectory()) {
-            fs.mkdirSync(initPath);
-        }
-        const configDst = path.join(initPath, 'config.ini');
-        const userRuleDst = path.join(initPath, 'user-rules.txt');
-        function writeConfigFile() {
-            fs.copyFileSync(utils.pkgdata(CONFIG_SAMPLE), configDst);
-            fs.copyFileSync(utils.pkgdata(USER_RULE_SAMPLE), userRuleDst);
-            console.log('init success');
-            process.exit();
-        }
-        if (fs.existsSync(configDst) || fs.existsSync(userRuleDst)) {
-            const rl = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout,
-            });
+    const initPath = utils.abspath(argv.init || '.');
+    if (!fs.existsSync(initPath) || !fs.statSync(initPath).isDirectory()) {
+        fs.mkdirSync(initPath);
+    }
+    const configDst = path.join(initPath, 'config.ini');
+    const userRuleDst = path.join(initPath, 'user-rules.txt');
+    function writeConfigFile() {
+        fs.copyFileSync(utils.pkgdata(CONFIG_SAMPLE), configDst);
+        fs.copyFileSync(utils.pkgdata(USER_RULE_SAMPLE), userRuleDst);
+        console.log('init success');
+        process.exit();
+    }
+    if (fs.existsSync(configDst) || fs.existsSync(userRuleDst)) {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
 
-            rl.question('file already exists, overwrite?[y|n]: ', (answer) => {
-                if (answer.toLowerCase() !== 'y') {
-                    throw new Error('file already exists.');
-                } else {
-                    rl.close();
-                    writeConfigFile();
-                }
-            });
-        } else {
-            writeConfigFile();
-        }
-    } catch (error) {
-        console.log(`init fail: ${error}`);
-        process.exit(1);
+        rl.question('file already exists, overwrite?[y|n]: ', (answer) => {
+            if (answer.toLowerCase() !== 'y') {
+                console.error('init fail: file already exists');
+                process.exit(1);
+            } else {
+                rl.close();
+                writeConfigFile();
+            }
+        });
+    } else {
+        writeConfigFile();
     }
 } else {
     const {
