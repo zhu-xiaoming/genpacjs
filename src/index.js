@@ -1,8 +1,8 @@
 const fs = require('fs');
 
-const _ = require('lodash');
+const { get, isEmpty } = require('lodash');
 const ConfigParser = require('configparser');
-const request = require('request-promise');
+const request = require('request');
 
 const packageInfo = require('../package.json');
 const utils = require('./utils');
@@ -59,7 +59,7 @@ class GenPAC {
         if (!Array.isArray(this.userRule)) {
             this.userRule = [this.userRule];
         }
-        this.userRuleFrom = !_.isEmpty(userRuleFrom) ? userRuleFrom : cfg.userRuleFrom;
+        this.userRuleFrom = !isEmpty(userRuleFrom) ? userRuleFrom : cfg.userRuleFrom;
         if (!Array.isArray(this.userRuleFrom)) {
             this.userRuleFrom = [this.userRuleFrom];
         }
@@ -83,7 +83,7 @@ class GenPAC {
 
     static logError(...args) {
         const lastArg = args[args.length - 1];
-        const exit = _.get(lastArg, 'exit');
+        const exit = get(lastArg, 'exit');
         if (typeof exit === 'undefined') {
             console.error(...args);
         } else {
@@ -98,7 +98,7 @@ class GenPAC {
         let cfg = {};
         function getv(k, d) {
             try {
-                return utils.strip(_.get(cfg, k, d), ' \'\t"');
+                return utils.strip(get(cfg, k, d), ' \'\t"');
             } catch (error) {
                 return d;
             }
@@ -221,10 +221,18 @@ class GenPAC {
             }
             proxy = `${proxy}${proxyHost}:${proxyPort}`;
         }
-        return request({
-            method: 'get',
-            uri: this.gfwlistURL,
-            proxy,
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'get',
+                uri: this.gfwlistURL,
+                proxy,
+            }, (err, response, body) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(body);
+                }
+            });
         });
     }
 
