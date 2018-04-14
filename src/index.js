@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const { get, isEmpty } = require('lodash');
+const { get, trim, camelCase } = require('lodash');
 const ConfigParser = require('configparser');
 const request = require('request');
 
@@ -28,11 +28,13 @@ const PROXY_TYPES = {
 const DEFAULT_CONFIG = {
     proxy: '',
     output: '',
-    gfwlistURL: DEFAULT_URL,
+    gfwlistUrl: DEFAULT_URL,
     gfwlistProxy: '',
     gfwlistLocal: '',
+    updateGfwlistLocal: true,
+    userRule: [],
     userRuleFrom: [],
-    updateGFWListLocal: true,
+    configFrom: '',
     compress: false,
     base64: false,
 };
@@ -41,10 +43,10 @@ class GenPAC {
     constructor({
         proxy,
         output,
-        gfwlistURL,
+        gfwlistUrl,
         gfwlistProxy,
         gfwlistLocal,
-        updateGFWListLocal,
+        updateGfwlistLocal,
         userRule,
         userRuleFrom,
         configFrom,
@@ -55,11 +57,11 @@ class GenPAC {
 
         const cfg = GenPAC.readConfig(this.configFrom);
         this.proxy = proxy || cfg.proxy;
-        this.gfwlistURL = gfwlistURL || cfg.gfwlistURL;
+        this.gfwlistUrl = gfwlistUrl || cfg.gfwlistUrl;
         this.gfwlistProxy = gfwlistProxy || cfg.gfwlistProxy;
 
-        this.updateGFWListLocal = utils.convBool(
-            utils.checkUndefined(updateGFWListLocal, cfg.updateGFWListLocal),
+        this.updateGfwlistLocal = utils.convBool(
+            utils.checkUndefined(updateGfwlistLocal, cfg.updateGfwlistLocal),
         );
         this.compress = utils.convBool(utils.checkUndefined(compress, cfg.compress));
         this.base64 = utils.convBool(utils.checkUndefined(base64, cfg.base64));
@@ -71,12 +73,8 @@ class GenPAC {
         if (!Array.isArray(this.userRule)) {
             this.userRule = [this.userRule];
         }
-        this.userRule = this.userRule.map((e) => {
-            if (typeof e === 'string') {
-                return utils.strip(e, ' \'\t"');
-            }
-            return `${e}`;
-        });
+        this.userRule = this.userRule.map(e => trim(e, ' \'\t"'));
+
         this.userRuleFrom = userRuleFrom || cfg.userRuleFrom;
         if (!Array.isArray(this.userRuleFrom)) {
             this.userRuleFrom = [this.userRuleFrom];
@@ -114,9 +112,10 @@ class GenPAC {
 
     static readConfig(configFrom) {
         let cfg = DEFAULT_CONFIG;
-        function getv(k, d) {
+        function getv(k) {
+            const d = DEFAULT_CONFIG[camelCase(k)];
             try {
-                return utils.strip(get(cfg, k, d), ' \'\t"');
+                return trim(get(cfg, k, d), ' \'\t"');
             } catch (error) {
                 return d;
             }
@@ -132,15 +131,15 @@ class GenPAC {
             GenPAC.logError('read config file fail.', { exit: true });
         }
         return {
-            proxy: getv('proxy', ''),
-            output: getv('output', ''),
-            gfwlistURL: getv('gfwlist-url', DEFAULT_URL),
-            gfwlistProxy: getv('gfwlist-proxy', ''),
-            gfwlistLocal: getv('gfwlist-local', ''),
-            userRuleFrom: getv('user-rule-from', []),
-            updateGFWListLocal: getv('update-gfwlist-local', true),
-            compress: getv('compress', false),
-            base64: getv('base64', false),
+            proxy: getv('proxy'),
+            output: getv('output'),
+            gfwlistUrl: getv('gfwlist-url'),
+            gfwlistProxy: getv('gfwlist-proxy'),
+            gfwlistLocal: getv('gfwlist-local'),
+            userRuleFrom: getv('user-rule-from'),
+            updateGfwlistLocal: getv('update-gfwlist-local'),
+            compress: getv('compress'),
+            base64: getv('base64'),
         };
     }
 
@@ -159,7 +158,7 @@ class GenPAC {
         const proxyRegexp = [];
 
         rules.forEach((l) => {
-            let line = utils.strip(l);
+            let line = trim(l);
 
             // comment
             if (!line || line.startsWith('!')) {
@@ -201,7 +200,7 @@ class GenPAC {
             }
 
             if (!isRegexp) {
-                line = `*${utils.strip(line, '*')}*`;
+                line = `*${trim(line, '*')}*`;
             }
 
             if (isDirect) {
@@ -242,7 +241,7 @@ class GenPAC {
         return new Promise((resolve, reject) => {
             request({
                 method: 'get',
-                uri: this.gfwlistURL,
+                uri: this.gfwlistUrl,
                 proxy,
             }, (err, response, body) => {
                 if (err) {
@@ -254,12 +253,12 @@ class GenPAC {
         });
     }
 
-    async fetchGFWList() {
+    async fetchGfwlist() {
         let content = '';
         try {
             content = await this.buildOpener();
-            this._ret.gfwlistFrom = `online[${this.gfwlistURL}]`;
-            if (this.gfwlistLocal && this.updateGFWListLocal) {
+            this._ret.gfwlistFrom = `online[${this.gfwlistUrl}]`;
+            if (this.gfwlistLocal && this.updateGfwlistLocal) {
                 fs.writeFile(utils.abspath(this.gfwlistLocal), content, (err) => {});
             }
         } catch (error) {
@@ -271,7 +270,7 @@ class GenPAC {
             } catch (err) {}
         }
         if (!content) {
-            if (this.gfwlistURL !== '-' || this.gfwlistLocal) {
+            if (this.gfwlistUrl !== '-' || this.gfwlistLocal) {
                 GenPAC.logError('fetch gfwlist fail.', { exit: true });
             } else {
                 this._ret.gfwlistFrom = 'unused';
@@ -284,7 +283,7 @@ class GenPAC {
                 e => e.startsWith('!') && e.includes('Last Modified'),
             );
             if (lastModifiedLine) {
-                this._ret.modified = utils.strip(
+                this._ret.modified = trim(
                     lastModifiedLine
                         .split(':')
                         .slice(1)
@@ -329,7 +328,7 @@ class GenPAC {
         this._ret.generated = this._ret.generated.toLocaleString();
     }
 
-    outputPAC() {
+    outputPac() {
         const pacTpl = utils.pkgdata(this.compress ? PAC_TPL_MIN : PAC_TPL);
         let content = fs.readFileSync(pacTpl, {
             encoding: 'utf8',
@@ -362,10 +361,10 @@ class GenPAC {
     }
 
     async generate() {
-        const gfwlistRules = await this.fetchGFWList();
+        const gfwlistRules = await this.fetchGfwlist();
         const userRules = this.fetchUserRules();
         this.startParse(gfwlistRules, userRules);
-        this.outputPAC();
+        this.outputPac();
     }
 }
 

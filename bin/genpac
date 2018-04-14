@@ -108,33 +108,7 @@ if (typeof argv.init === 'string') {
         writeConfigFile();
     }
 } else {
-    const {
-        proxy,
-        'gfwlist-url': gfwlistURL,
-        'gfwlist-proxy': gfwlistProxy,
-        'gfwlist-local': gfwlistLocal,
-        'update-gfwlist-local': updateGFWListLocal,
-        'user-rule': userRule,
-        'user-rule-from': userRuleFrom,
-        'config-from': configFrom,
-        output,
-        compress,
-        base64,
-    } = argv;
-
-    const genpac = new GenPAC({
-        proxy,
-        output,
-        gfwlistURL,
-        gfwlistProxy,
-        gfwlistLocal,
-        updateGFWListLocal,
-        userRule,
-        userRuleFrom,
-        configFrom,
-        compress,
-        base64,
-    });
+    const genpac = new GenPAC(argv);
 
     genpac.generate();
 }

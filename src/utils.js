@@ -46,16 +46,6 @@ function abspath(relativePath) {
     return path.resolve(relativePath);
 }
 
-function strip(string, trimStr) {
-    if (typeof trimStr === 'undefined') {
-        return string.trim();
-    }
-    let str = trimStr.replace(/]/g, '\\]');
-    str = str.replace(/\\/g, '\\\\');
-    const s = `^[${str}]+|[${str}]+$`;
-    return string.replace(new RegExp(s, 'g'), '');
-}
-
 function resolveApp(relativePath) {
     const appRoot = path.resolve(__dirname, '../');
     return path.resolve(appRoot, relativePath);
@@ -161,7 +151,6 @@ function jsonMinify(json) {
 module.exports = {
     rmdirSyncR,
     abspath,
-    strip,
     resolveApp,
     pkgdata,
     jsonMinify,
