@@ -25,20 +25,32 @@ const PROXY_TYPES = {
     SOCKS: SOCKS4,
 };
 
+const DEFAULT_CONFIG = {
+    proxy: '',
+    output: '',
+    gfwlistURL: DEFAULT_URL,
+    gfwlistProxy: '',
+    gfwlistLocal: '',
+    userRuleFrom: [],
+    updateGFWListLocal: true,
+    compress: false,
+    base64: false,
+};
+
 class GenPAC {
     constructor({
-        proxy = '',
-        output = '',
-        gfwlistURL = DEFAULT_URL,
-        gfwlistProxy = '',
-        gfwlistLocal = '',
+        proxy,
+        output,
+        gfwlistURL,
+        gfwlistProxy,
+        gfwlistLocal,
         updateGFWListLocal,
-        userRule = [],
-        userRuleFrom = [],
-        configFrom = '',
+        userRule,
+        userRuleFrom,
+        configFrom,
         compress,
         base64,
-    } = {}) {
+    } = DEFAULT_CONFIG) {
         this.configFrom = configFrom;
 
         const cfg = GenPAC.readConfig(this.configFrom);
@@ -59,7 +71,13 @@ class GenPAC {
         if (!Array.isArray(this.userRule)) {
             this.userRule = [this.userRule];
         }
-        this.userRuleFrom = !isEmpty(userRuleFrom) ? userRuleFrom : cfg.userRuleFrom;
+        this.userRule = this.userRule.map((e) => {
+            if (typeof e === 'string') {
+                return utils.strip(e, ' \'\t"');
+            }
+            return `${e}`;
+        });
+        this.userRuleFrom = userRuleFrom || cfg.userRuleFrom;
         if (!Array.isArray(this.userRuleFrom)) {
             this.userRuleFrom = [this.userRuleFrom];
         }
@@ -67,7 +85,7 @@ class GenPAC {
         if (this.base64) {
             this.compress = true;
             GenPAC.logError(
-                'WARNING: some brower DO NOT support pac file which was encoded by base64.',
+                'WARNING: some browser DO NOT support pac file which was encoded by base64.',
             );
         }
 
@@ -95,7 +113,7 @@ class GenPAC {
     }
 
     static readConfig(configFrom) {
-        let cfg = {};
+        let cfg = DEFAULT_CONFIG;
         function getv(k, d) {
             try {
                 return utils.strip(get(cfg, k, d), ' \'\t"');
