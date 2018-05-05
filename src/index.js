@@ -1,7 +1,9 @@
 const fs = require('fs');
+const url = require('url');
 
-const { get, trim, camelCase } = require('lodash');
+const { get, trim, trimStart, camelCase } = require('lodash');
 const ConfigParser = require('configparser');
+const psl = require('psl');
 const request = require('request');
 
 const packageInfo = require('../package.json');
@@ -9,10 +11,6 @@ const utils = require('./utils');
 
 const VERSION = packageInfo.version;
 const DEFAULT_URL = 'https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt';
-
-const PAC_TPL = 'pac-tpl.js';
-const PAC_TPL_MIN = 'pac-tpl.min.js';
-const PAC_TPL_BASE64 = 'pac-tpl.base64.js';
 
 const SOCKS4 = 'socks4';
 const SOCKS5 = 'socks5';
@@ -31,12 +29,13 @@ const DEFAULT_CONFIG = {
     gfwlistUrl: DEFAULT_URL,
     gfwlistProxy: '',
     gfwlistLocal: '',
+    gfwlistDisabled: false,
     updateGfwlistLocal: true,
     userRule: [],
     userRuleFrom: [],
     configFrom: '',
     compress: false,
-    base64: false,
+    precise: false,
 };
 
 class GenPAC {
@@ -46,12 +45,13 @@ class GenPAC {
         gfwlistUrl,
         gfwlistProxy,
         gfwlistLocal,
+        gfwlistDisabled,
         updateGfwlistLocal,
         userRule,
         userRuleFrom,
         configFrom,
         compress,
-        base64,
+        precise,
     } = DEFAULT_CONFIG) {
         this.configFrom = configFrom;
 
@@ -64,28 +64,14 @@ class GenPAC {
             utils.checkUndefined(updateGfwlistLocal, cfg.updateGfwlistLocal),
         );
         this.compress = utils.convBool(utils.checkUndefined(compress, cfg.compress));
-        this.base64 = utils.convBool(utils.checkUndefined(base64, cfg.base64));
+        this.precise = utils.convBool(utils.checkUndefined(precise, cfg.precise));
 
         this.output = output || cfg.output;
         this.gfwlistLocal = gfwlistLocal || cfg.gfwlistLocal;
+        this.gfwlistDisabled = gfwlistDisabled || cfg.gfwlistDisabled;
 
-        this.userRule = userRule;
-        if (!Array.isArray(this.userRule)) {
-            this.userRule = [this.userRule];
-        }
-        this.userRule = this.userRule.map(e => trim(e, ' \'\t"'));
-
-        this.userRuleFrom = userRuleFrom || cfg.userRuleFrom;
-        if (!Array.isArray(this.userRuleFrom)) {
-            this.userRuleFrom = [this.userRuleFrom];
-        }
-
-        if (this.base64) {
-            this.compress = true;
-            GenPAC.logError(
-                'WARNING: some browser DO NOT support pac file which was encoded by base64.',
-            );
-        }
+        this.userRule = utils.listV(userRule).map(e => trim(e, ' \'\t"'));
+        this.userRuleFrom = utils.listV(userRuleFrom || cfg.userRuleFrom);
 
         this._ret = {
             version: VERSION,
@@ -136,14 +122,15 @@ class GenPAC {
             gfwlistUrl: getv('gfwlist-url'),
             gfwlistProxy: getv('gfwlist-proxy'),
             gfwlistLocal: getv('gfwlist-local'),
+            gfwlistDisabled: getv('gfwlist-disabled'),
             userRuleFrom: getv('user-rule-from'),
             updateGfwlistLocal: getv('update-gfwlist-local'),
             compress: getv('compress'),
-            base64: getv('base64'),
+            precise: getv('precise'),
         };
     }
 
-    static parseRules(rules) {
+    static parseRulesPrecise(rules) {
         function wildcardToRegExp(pattern) {
             let p = pattern.replace(/([\\+|{}[\]()^$.#])/g, String.raw`\$1`);
             // p = p.replace(/\*+/g, '*')
@@ -219,6 +206,129 @@ class GenPAC {
         return [directRegexp, directWildcard, proxyRegexp, proxyWildcard];
     }
 
+    static getPublicSuffix(host) {
+        let domain;
+        if (host.search(/^(\d{0,3}\.){3}\d{0,3}$/g) < 0) {
+            if (host.startsWith('.')) {
+                host = trimStart(host, '.');
+            }
+            const { sld, tld, error, domain: d } = psl.parse(host);
+            if (!error) {
+                if (sld) {
+                    domain = d;
+                } else {
+                    domain = tld;
+                }
+            }
+        }
+        if (!domain || !domain.includes('.') || domain.endsWith('.')) {
+            domain = null;
+        }
+        return domain;
+    }
+
+    static clearAsterisk(rule) {
+        let r = rule;
+        if (r.includes('*')) {
+            r = trim(r, '*');
+            r = r.replace('/*.', '/');
+            r = r.replace(/\/([a-zA-Z0-9]+)\*\./g, '/');
+            r = r.replace(/\*([a-zA-Z0-9_%]+)/g, '');
+            r = r.replace(/^([a-zA-Z0-9_%]+)\*/g, '');
+        }
+        return r;
+    }
+
+    static surmiseDomain(rule) {
+        let domain = '';
+
+        rule = GenPAC.clearAsterisk(rule);
+        rule = trimStart(rule, '.');
+        
+        if (rule.includes('%2F')) {
+            rule = decodeURIComponent(rule);
+        }
+        
+        const t = rule.indexOf('/');
+        if (rule.startsWith('http:') || rule.startsWith('https:')) {
+            const r = url.parse(rule);
+            domain = r.hostname;
+        } else if (t > 0 && rule.search(/[()]/g) > 0) {
+            domain = rule.slice(0, t);
+        } else if (rule.indexOf('*/') > 0) {
+            domain = rule.slice(0, t);
+        } else if (t > 0) {
+            const r = url.parse(`http://${rule}`);
+            domain = r.hostname;
+        } else if (rule.indexOf('.') > 0) {
+            domain = rule;
+        }
+
+        return GenPAC.getPublicSuffix(domain);
+    }
+
+    static parseRules(rules) {
+        let directLst = [];
+        let proxyLst = [];
+        rules.forEach((l) => {
+            let line = l;
+            let domain = '';
+
+            if (!line || line.startsWith('!')) {
+                return;
+            }
+
+            if (line.startsWith('@@')) {
+                line = trimStart(line, '@|.');
+                domain = GenPAC.surmiseDomain(line);
+
+                if (domain) {
+                    directLst.push(domain);
+                }
+                return;
+            } else if (line.indexOf('.*') >= 0 || line.startsWith('/')) {
+                line = line.replace(/\\\//g, '/').replace(/\\\./g, '.');
+                try {
+                    let m = line.match(/[a-z0-9]+\..*/g) || [''];
+                    domain = GenPAC.surmiseDomain(m[0]);
+                    if (domain) {
+                        proxyLst.push(domain);
+                        return;
+                    }
+                    m = line.match(/[a-z]+\.\(.*\)/g) || [''];
+                    m = m[0].split(/[()]/g);
+                    if (m[1]) {
+                        m[1].split(/\|/g).forEach((tld) => {
+                            domain = GenPAC.surmiseDomain(`${m[0]}${tld}`);
+                            if (domain) {
+                                proxyLst.push(domain);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.log(error);
+                }
+                return;
+            } else if (line.startsWith('|')) {
+                line = trimStart(line, '|');
+            }
+            domain = GenPAC.surmiseDomain(line);
+            if (domain) {
+                proxyLst.push(domain);
+            }
+        });
+
+        proxyLst = Array.from(new Set(proxyLst));
+        directLst = Array.from(new Set(directLst));
+
+        directLst = directLst.filter(d => !proxyLst.includes(d));
+
+        proxyLst.sort();
+        directLst.sort();
+
+        return [directLst, proxyLst];
+    }
+
     buildOpener() {
         let proxy;
         // 设置代理
@@ -239,21 +349,29 @@ class GenPAC {
             proxy = `${proxy}${proxyHost}:${proxyPort}`;
         }
         return new Promise((resolve, reject) => {
-            request({
-                method: 'get',
-                uri: this.gfwlistUrl,
-                proxy,
-            }, (err, response, body) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(body);
-                }
-            });
+            request(
+                {
+                    method: 'get',
+                    uri: this.gfwlistUrl,
+                    proxy,
+                },
+                (err, response, body) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(body);
+                    }
+                },
+            );
         });
     }
 
     async fetchGfwlist() {
+        this._ret.gfwlistFrom = '-';
+        this._ret.modified = '-';
+        if (this.gfwlistDisabled) {
+            return [];
+        }
         let content = '';
         try {
             content = await this.buildOpener();
@@ -267,33 +385,31 @@ class GenPAC {
                     encoding: 'utf8',
                 });
                 this._ret.gfwlistFrom = `local[${this.gfwlistLocal}]`;
-            } catch (err) {}
+            } catch (err) {
+                console.log(err);
+            }
         }
         if (!content) {
             if (this.gfwlistUrl !== '-' || this.gfwlistLocal) {
                 GenPAC.logError('fetch gfwlist fail.', { exit: true });
             } else {
-                this._ret.gfwlistFrom = 'unused';
+                this._ret.gfwlistFrom = '-';
             }
         }
         try {
             content = `! ${Buffer.from(content, 'base64').toString('utf8')}`;
-            content = utils.splitLines(content);
-            const lastModifiedLine = content.find(
-                e => e.startsWith('!') && e.includes('Last Modified'),
+        } catch (error) {
+            GenPAC.logError('base64 decode fail.', { exit: true });
+        }
+        content = utils.splitLines(content);
+        const lastModifiedLine = content.find(e => e.startsWith('! Last Modified:'));
+        if (lastModifiedLine) {
+            this._ret.modified = trim(
+                lastModifiedLine
+                    .split(':')
+                    .slice(1)
+                    .join(':'),
             );
-            if (lastModifiedLine) {
-                this._ret.modified = trim(
-                    lastModifiedLine
-                        .split(':')
-                        .slice(1)
-                        .join(':'),
-                );
-            }
-        } catch (error) {}
-
-        if (!this._ret.modified) {
-            this._ret.modified = '-';
         }
 
         return content;
@@ -311,14 +427,15 @@ class GenPAC {
                     encoding: 'utf8',
                 })}`;
             } catch (error) {
-                GenPAC.logError('read user rule file fail. ', f);
+                GenPAC.logError('read user rule file fail. ', f, { exit: true });
             }
         });
         return rules.concat(utils.splitLines(ruleString));
     }
 
     startParse(gfwlistRules, userRules) {
-        const rules = [GenPAC.parseRules(userRules), GenPAC.parseRules(gfwlistRules)];
+        const funcParse = this.precise ? GenPAC.parseRulesPrecise : GenPAC.parseRules;
+        const rules = [funcParse(userRules), funcParse(gfwlistRules)];
         if (this.compress) {
             this._ret.rules = JSON.stringify(rules);
         } else {
@@ -328,11 +445,20 @@ class GenPAC {
         this._ret.generated = this._ret.generated.toLocaleString();
     }
 
-    outputPac() {
-        const pacTpl = utils.pkgdata(this.compress ? PAC_TPL_MIN : PAC_TPL);
-        let content = fs.readFileSync(pacTpl, {
+    getPacTpl() {
+        let pacTpl = this.precise ? 'pac-tpl-precise.js' : 'pac-tpl.js';
+        if (this.compress) {
+            pacTpl = pacTpl.split('.');
+            pacTpl.splice(-1, 0, 'min');
+            pacTpl = pacTpl.join('.');
+        }
+        return fs.readFileSync(utils.pkgdata(pacTpl), {
             encoding: 'utf8',
         });
+    }
+
+    outputPac() {
+        let content = this.getPacTpl();
 
         content = utils.replace(content, {
             __VERSION__: this._ret.version,
@@ -343,18 +469,14 @@ class GenPAC {
             __RULES__: this._ret.rules,
         });
 
-        if (this.base64) {
-            const b64 = fs.readFileSync(utils.pkgdata(PAC_TPL_BASE64), {
-                encoding: 'utf8',
-            });
-            content = utils.replace(b64, {
-                __BASE64__: Buffer.from(content).toString('base64'),
-                __VERSION__: this._ret.version,
-            });
-        }
-
         if (this.output && this.output !== '-') {
-            fs.writeFile(utils.abspath(this.output), content, (err) => {});
+            fs.writeFile(utils.abspath(this.output), content, (err) => {
+                if (err) {
+                    GenPAC.logError(`write output file fail.\n${err}\n${this.output}`, {
+                        exit: true,
+                    });
+                }
+            });
         } else {
             console.info(content);
         }

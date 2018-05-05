@@ -62,6 +62,13 @@ function convBool(value) {
     return Boolean(value);
 }
 
+function listV(value) {
+    if (Array.isArray(value)) {
+        return value;
+    }
+    return [value];
+}
+
 function replace(content, replaces) {
     let result = content;
     Object.keys(replaces).forEach((k) => {
@@ -155,6 +162,7 @@ module.exports = {
     pkgdata,
     jsonMinify,
     convBool,
+    listV,
     splitLines,
     replace,
     checkUndefined,
